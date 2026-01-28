@@ -12,6 +12,8 @@ The codebase supports:
 - Replayable environments to animate or re-execute a learned parameter vector θ
 - Reinforcement learning over low-dimensional behavior parameters
 
+TODO: Adapt the behaviour to drone using the Hierarchical LMPC from https://github.com/fleurssauvages/Multi_RL_LMPC_for_Drone_Flock
+
 ---
 
 ## 🐠 Biological & Algorithmic Inspiration
@@ -35,6 +37,23 @@ scripts/
 - train_rl.py — Reinforcement learning over θ to learn the "best" behaviour given a reward
 
 ---
+
+## 🎥 Demos
+
+<div align="center">
+
+### 🔹Free-roam: Fishes don't have any goal besides avoid obstacles and predators
+<img src="images/free_roam.gif" width="600" alt="traj">
+
+### 🔹 Goal-oriented roamn: Fishes try to reach a given goal (gains can be manually tuned)
+<img src="images/target_roam.gif" width="800" alt="RL">
+
+### 🔹 Goal-oriented roam after RL-optimization
+<img src="images/RL_roam.gif" width="800" alt="RL">
+
+</div>
+---
+
 
 ## 🧪 Main Scripts
 
