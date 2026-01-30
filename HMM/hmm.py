@@ -29,7 +29,7 @@ class HMMGMM:
             n_iter=n_iter,
             min_covar=min_covar,
             verbose=False,
-            init_params="mcw",   # init means/covars/weights, but not start/trans
+            init_params="mcw",
             params="stmcw", 
         )
         self.model.startprob_ = np.ones(n_states) / n_states
@@ -51,6 +51,21 @@ class HMMGMM:
 
         X_all = np.vstack(seqs)
 
+        self.model.fit(X_all, lengths)
+
+    def update(self, pos_demos):
+        demos = normalize_demos_list(pos_demos)
+
+        seqs, lengths = [], []
+        for Y in demos:
+            T, Dp = Y.shape
+            t = np.linspace(0.0, 1.0, T)[:, None]
+            seqs.append(np.hstack([t, Y]))
+            lengths.append(T)
+
+        X_all = np.vstack(seqs)
+
+        self.model.init_params = ""
         self.model.fit(X_all, lengths)
 
     # ============================================================

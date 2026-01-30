@@ -57,6 +57,17 @@ def demo_weights_from_via_dist(d, sigma):
     w = np.exp(-0.5 * (d / sigma)**2)
     return w / (w.sum() + 1e-12)
 
+def select_demos_near_via(boids_pos, via_point, n_demos=3, space_stride=5, time_stride=10):
+    idx, _ = select_demos_near_via_anytime(boids_pos, via_point, k=n_demos, stride=space_stride)
+    pos_demos = []
+    for i in idx:
+        demo = boids_pos[:, i, :]
+        valid = (np.linalg.norm(demo, axis=1) > 1e-3)
+        demo = demo[valid, :]
+        demo = demo[::time_stride, :]
+        pos_demos.append(demo)
+    return pos_demos
+
 if __name__ == "__main__":
     """ Generate Fish trajectories"""
     load_theta = True
@@ -92,22 +103,12 @@ if __name__ == "__main__":
                        [20.0, 10.0, 20.0]])
     
     x_via = x_vias[0]
-    fig = plt.figure(figsize=(22, 14))
-    n_demos = 3
-    stride = 5
-    rng = np.random.default_rng()
-    idx, d = select_demos_near_via_anytime(boids_pos, x_via, k=10, stride=5)
-    pos_demos = []
-    time_stride = 10
-    for i in idx:
-        demo = boids_pos[:, i, :]
-        valid = (np.linalg.norm(demo, axis=1) > 1e-3)
-        demo = demo[valid, :]
-        demo = demo[::time_stride, :]
-        pos_demos.append(demo)
+    pos_demos = select_demos_near_via(boids_pos, x_via, n_demos=10, space_stride=5, time_stride=5)
 
+    fig = plt.figure(figsize=(22, 14))
     """ Fit an HMM-GMM model to the demonstrations """
     hmmgmm = HMMGMM(n_states=5, n_mix=1, seed=0)
+    t0 = time.time()
     hmmgmm.fit(pos_demos)
     t1 = time.time()
     print(f"HMM-GMM Training Time: {(t1 - t0)*1000.0:.2f} ms")
