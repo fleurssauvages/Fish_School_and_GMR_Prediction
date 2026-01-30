@@ -104,16 +104,23 @@ if __name__ == "__main__":
                        [20.0, 20.0, 15.0],
                        [20.0, 25.0, 20.0],
                        [20.0, 15.0, 20.0]])
-    
-    x_via = x_vias[0]
-    pos_demos = select_demos_near_via(boids_pos, x_via, n_demos=5, space_stride=5, time_stride=5)
 
     # ============================================================
     # Fit an HMM-GMM model
     # ============================================================
+    """ Parameters"""
+    n_demos = 5
+    space_stride = 5
+    time_stride = 5
+    n_states = 8
+    n_mix = 1
+    cov_type = "diag"  # "diag" or "full"
+
+    x_via = x_vias[0]
+    pos_demos = select_demos_near_via(boids_pos, x_via, n_demos=n_demos, space_stride=space_stride, time_stride=time_stride)
     
     """ Fit an HMM-GMM model to the demonstrations """
-    hmmgmm = HMMGMM(n_states=8, n_mix=1, seed=0, cov_type= "diag")
+    hmmgmm = HMMGMM(n_states=n_states, n_mix=n_mix, seed=0, cov_type= cov_type)
     t0 = time.time()
     hmmgmm.fit(pos_demos)
     t1 = time.time()
@@ -122,7 +129,7 @@ if __name__ == "__main__":
     """ Update with new via point """
     x_via = x_vias[2]
     t0 = time.time()
-    pos_demos = select_demos_near_via(boids_pos, x_via, n_demos=5, space_stride=5, time_stride=5)
+    pos_demos = select_demos_near_via(boids_pos, x_via, n_demos=n_demos, space_stride=space_stride, time_stride=time_stride)
     hmmgmm.update(pos_demos, n_iter=3)
     t1 = time.time()
     print(f"HMM-GMM Update Time: {(t1 - t0)*1000.0:.2f} ms")
