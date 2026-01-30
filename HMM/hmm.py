@@ -83,14 +83,10 @@ class HMMGMM:
         if covtype == "full":
             var_t = self.model.covars_[:, :, 0, 0] + 1e-12
             # Cov(y,t) needed for conditional: shape (K,M,pos_dim)
-            cov_yt = self.model.covars_[:, :, 1:, 0]
-            cov_ty = self.model.covars_[:, :, 0, 1:]
             cov_yy = self.model.covars_[:, :, 1:, 1:]
         elif covtype == "diag":
             # Only diagonal variances exist; cross-covariances are zero
             var_t = self.model.covars_[:, :, 0] + 1e-12
-            cov_yt = np.zeros((self.n_states, self.n_mix, D-1))
-            cov_ty = np.zeros((self.n_states, self.n_mix, D-1))
             # diag variances for y: shape (K,M,pos_dim)
             cov_yy = np.zeros((self.n_states, self.n_mix, D-1, D-1))
             diag_y = self.model.covars_[:, :, 1:]  # (K,M,pos_dim)
