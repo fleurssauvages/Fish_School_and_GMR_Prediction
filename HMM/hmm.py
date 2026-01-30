@@ -3,23 +3,6 @@ from dataclasses import dataclass
 from hmmlearn.hmm import GMMHMM
 from scipy.special import logsumexp
 
-# ============================================================
-# Dataclass wrapper
-# ============================================================
-
-@dataclass
-class HMMGMM:
-    model: object  # hmmlearn.hmm.GMMHMM
-    D: int         # full obs dim = 1 + pos_dim
-
-    @property
-    def n_states(self):
-        return self.model.n_components
-
-    @property
-    def n_mix(self):
-        return self.model.n_mix
-
 
 # ============================================================
 # Utilities
@@ -40,39 +23,93 @@ def normalize_demos_list(pos_demos):
 
 
 # ============================================================
-# Training
+# Dataclass wrapper
 # ============================================================
 
-def fit_hmm_gmm_time_augmented(
-    pos_demos,
-    n_states=8,
-    n_mix=2,
-    seed=0,
-    min_covar=1e-6,
-    n_iter=200,
-):
-    demos = normalize_demos_list(pos_demos)
+@dataclass
+class HMMGMM:
+    model: object  # hmmlearn.hmm.GMMHMM
+    D: int         # full obs dim = 1 + pos_dim
 
-    seqs, lengths = [], []
-    for Y in demos:
-        T, Dp = Y.shape
-        t = np.linspace(0.0, 1.0, T)[:, None]
-        seqs.append(np.hstack([t, Y]))
-        lengths.append(T)
+    @property
+    def n_states(self):
+        return self.model.n_components
 
-    X_all = np.vstack(seqs)
+    @property
+    def n_mix(self):
+        return self.model.n_mix
+    
+    def __init__(self, n_states=8, n_mix=2, seed=0, min_covar=1e-6, n_iter=200):
+        self.model = GMMHMM(
+            n_components=n_states,
+            n_mix=n_mix,
+            covariance_type="full",
+            random_state=seed,
+            n_iter=n_iter,
+            min_covar=min_covar,
+            verbose=False,
+            init_params="mcw",   # init means/covars/weights, but not start/trans
+            params="stmcw", 
+        )
+        self.model.startprob_ = np.ones(n_states) / n_states
+        self.model.transmat_  = np.ones((n_states, n_states)) / n_states
 
-    hmm = GMMHMM(
-        n_components=n_states,
-        n_mix=n_mix,
-        covariance_type="full",
-        random_state=seed,
-        n_iter=n_iter,
-        min_covar=min_covar,
-        verbose=False,
-    )
-    hmm.fit(X_all, lengths)
-    return HMMGMM(hmm, X_all.shape[1])
+    # ============================================================
+    # Training
+    # ============================================================
+
+    def fit(self,pos_demos):
+        demos = normalize_demos_list(pos_demos)
+
+        seqs, lengths = [], []
+        for Y in demos:
+            T, Dp = Y.shape
+            t = np.linspace(0.0, 1.0, T)[:, None]
+            seqs.append(np.hstack([t, Y]))
+            lengths.append(T)
+
+        X_all = np.vstack(seqs)
+
+        self.model.fit(X_all, lengths)
+
+    # ============================================================
+    # Regression
+    # ============================================================
+
+    def regress(self, T, pos_dim=3):
+        # --- fast time-only emission
+        t_grid = np.linspace(0.0, 1.0, T)
+        mu_t = self.model.means_[:, :, 0]
+        var_t = self.model.covars_[:, :, 0, 0] + 1e-12
+        logw = np.log(self.model.weights_ + 1e-12)
+
+        logB = compute_logB_time_only(t_grid, logw, mu_t, var_t)
+        gamma, loglik = forward_backward_from_logB(self.model, logB)
+
+        # --- state means / covs
+        K, M = self.model.n_components, self.model.n_mix
+        state_mu = np.zeros((K, pos_dim))
+        state_S = np.zeros((K, pos_dim, pos_dim))
+        for k in range(K):
+            w = self.model.weights_[k]
+            mu_km = self.model.means_[k, :, 1:]
+            cov_km = self.model.covars_[k, :, 1:, 1:]
+            mu = np.sum(w[:, None] * mu_km, axis=0)
+            S = np.zeros((pos_dim, pos_dim))
+            for m in range(M):
+                S += w[m] * (cov_km[m] + np.outer(mu_km[m], mu_km[m]))
+            S -= np.outer(mu, mu)
+            state_mu[k] = mu
+            state_S[k] = S
+
+        mu_y = gamma @ state_mu
+        Sigma_y = np.zeros((T, pos_dim, pos_dim))
+        for t in range(T):
+            for k in range(K):
+                d = (state_mu[k] - mu_y[t]).reshape(pos_dim, 1)
+                Sigma_y[t] += gamma[t, k] * (state_S[k] + d @ d.T)
+
+        return mu_y, Sigma_y, gamma, loglik
 
 
 # ============================================================
@@ -155,72 +192,3 @@ def forward_backward_from_logB(hmm, logB):
     gamma = np.exp(loggamma)
     loglik = logsumexp(logalpha[-1])
     return gamma, loglik
-
-
-# ============================================================
-# Regression
-# ============================================================
-
-def hmm_gmm_regress(
-    hmmgmm,
-    T,
-    pos_dim=3,
-    via_points=None,
-):
-    hmm = hmmgmm.model
-    K, M = hmm.n_components, hmm.n_mix
-
-    if via_points is None:
-        via_points = {}
-
-    # --- fast time-only emission
-    t_grid = np.linspace(0.0, 1.0, T)
-    mu_t = hmm.means_[:, :, 0]
-    var_t = hmm.covars_[:, :, 0, 0] + 1e-12
-    logw = np.log(hmm.weights_ + 1e-12)
-
-    logB = compute_logB_time_only(t_grid, logw, mu_t, var_t)
-
-    # --- patch via points (slow, but few)
-    for idx, p in via_points.items():
-        x = np.zeros(1 + pos_dim)
-        x[0] = t_grid[idx]
-        x[1:] = p
-        logB[idx] = state_log_emission_full(hmmgmm, x)
-
-    gamma, loglik = forward_backward_from_logB(hmm, logB)
-
-    # --- state means / covs
-    state_mu = np.zeros((K, pos_dim))
-    state_S = np.zeros((K, pos_dim, pos_dim))
-    for k in range(K):
-        w = hmm.weights_[k]
-        mu_km = hmm.means_[k, :, 1:]
-        cov_km = hmm.covars_[k, :, 1:, 1:]
-        mu = np.sum(w[:, None] * mu_km, axis=0)
-        S = np.zeros((pos_dim, pos_dim))
-        for m in range(M):
-            S += w[m] * (cov_km[m] + np.outer(mu_km[m], mu_km[m]))
-        S -= np.outer(mu, mu)
-        state_mu[k] = mu
-        state_S[k] = S
-
-    mu_y = gamma @ state_mu
-    Sigma_y = np.zeros((T, pos_dim, pos_dim))
-    for t in range(T):
-        for k in range(K):
-            d = (state_mu[k] - mu_y[t]).reshape(pos_dim, 1)
-            Sigma_y[t] += gamma[t, k] * (state_S[k] + d @ d.T)
-
-    return mu_y, Sigma_y, gamma, loglik
-
-
-# ============================================================
-# Sampling
-# ============================================================
-
-def sample_trajectory(hmmgmm, T, pos_dim=3, rng=None):
-    if rng is None:
-        rng = np.random.default_rng()
-    X, _ = hmmgmm.model.sample(T, random_state=rng)
-    return X[:, 1:1+pos_dim]

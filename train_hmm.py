@@ -7,7 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from RL.env import FishGoalEnv
 
-from HMM.hmm import fit_hmm_gmm_time_augmented, hmm_gmm_regress
+from HMM.hmm import HMMGMM
 
 def gaussian_ellipsoid(mean, cov, n_std=2.0, n_points=30):
     """
@@ -107,13 +107,14 @@ if __name__ == "__main__":
         pos_demos.append(demo)
 
     """ Fit an HMM-GMM model to the demonstrations """
-    hmmgmm = fit_hmm_gmm_time_augmented(pos_demos, n_states=5, n_mix=1, seed=0)
+    hmmgmm = HMMGMM(n_states=5, n_mix=1, seed=0)
+    hmmgmm.fit(pos_demos)
     t1 = time.time()
     print(f"HMM-GMM Training Time: {(t1 - t0)*1000.0:.2f} ms")
 
     """ Perform regression to get mean and covariance of trajectory """
     t0 = time.time()
-    mu_y, Sigma_y, gamma, loglik = hmm_gmm_regress(hmmgmm, T=max_steps, pos_dim=3)
+    mu_y, Sigma_y, gamma, loglik = hmmgmm.regress(T=max_steps, pos_dim=3)
     t1 = time.time()
     print(f"Model Regression: {(t1 - t0)*1000.0:.2f} ms")
 
