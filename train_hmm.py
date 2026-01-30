@@ -113,7 +113,7 @@ if __name__ == "__main__":
     # ============================================================
     
     """ Fit an HMM-GMM model to the demonstrations """
-    hmmgmm = HMMGMM(n_states=8, n_mix=1, seed=0, cov_type="diag"))
+    hmmgmm = HMMGMM(n_states=8, n_mix=1, seed=0, cov_type= "diag")
     t0 = time.time()
     hmmgmm.fit(pos_demos)
     t1 = time.time()
