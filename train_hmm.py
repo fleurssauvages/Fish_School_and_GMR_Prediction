@@ -69,6 +69,9 @@ def select_demos_near_via(boids_pos, via_point, n_demos=3, space_stride=5, time_
     return pos_demos
 
 if __name__ == "__main__":
+    # ============================================================
+    # Compute Fish trajectories
+    # ============================================================
     """ Generate Fish trajectories"""
     load_theta = True
     if load_theta:
@@ -99,19 +102,30 @@ if __name__ == "__main__":
     
     x_vias = np.array([[20.0, 20.0, 25.0],
                        [20.0, 20.0, 15.0],
-                       [20.0, 30.0, 25.0],
-                       [20.0, 10.0, 20.0]])
+                       [20.0, 25.0, 20.0],
+                       [20.0, 15.0, 20.0]])
     
     x_via = x_vias[0]
-    pos_demos = select_demos_near_via(boids_pos, x_via, n_demos=10, space_stride=5, time_stride=5)
+    pos_demos = select_demos_near_via(boids_pos, x_via, n_demos=5, space_stride=5, time_stride=5)
 
-    fig = plt.figure(figsize=(22, 14))
+    # ============================================================
+    # Fit an HMM-GMM model
+    # ============================================================
+    
     """ Fit an HMM-GMM model to the demonstrations """
-    hmmgmm = HMMGMM(n_states=5, n_mix=1, seed=0)
+    hmmgmm = HMMGMM(n_states=8, n_mix=1, seed=0, cov_type="diag"))
     t0 = time.time()
     hmmgmm.fit(pos_demos)
     t1 = time.time()
     print(f"HMM-GMM Training Time: {(t1 - t0)*1000.0:.2f} ms")
+
+    """ Update with new via point """
+    x_via = x_vias[2]
+    t0 = time.time()
+    pos_demos = select_demos_near_via(boids_pos, x_via, n_demos=5, space_stride=5, time_stride=5)
+    hmmgmm.update(pos_demos, n_iter=3)
+    t1 = time.time()
+    print(f"HMM-GMM Update Time: {(t1 - t0)*1000.0:.2f} ms")
 
     """ Perform regression to get mean and covariance of trajectory """
     t0 = time.time()
@@ -119,6 +133,11 @@ if __name__ == "__main__":
     t1 = time.time()
     print(f"Model Regression: {(t1 - t0)*1000.0:.2f} ms")
 
+    # ============================================================
+    # Plot Results
+    # ============================================================
+
+    fig = plt.figure(figsize=(22, 14))
     ax_traj = fig.add_subplot(111, projection='3d')
     i = 0
     for demo in pos_demos:

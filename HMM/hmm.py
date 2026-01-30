@@ -20,11 +20,11 @@ class HMMGMM:
     def n_mix(self):
         return self.model.n_mix
     
-    def __init__(self, n_states=8, n_mix=2, seed=0, min_covar=1e-6, n_iter=200):
+    def __init__(self, n_states=8, n_mix=2, seed=0, min_covar=1e-6, n_iter=200, cov_type="diag"):
         self.model = GMMHMM(
             n_components=n_states,
             n_mix=n_mix,
-            covariance_type="full",
+            covariance_type=cov_type,
             random_state=seed,
             n_iter=n_iter,
             min_covar=min_covar,
@@ -53,7 +53,7 @@ class HMMGMM:
 
         self.model.fit(X_all, lengths)
 
-    def update(self, pos_demos):
+    def update(self, pos_demos, n_iter=10):
         demos = normalize_demos_list(pos_demos)
 
         seqs, lengths = [], []
@@ -66,6 +66,7 @@ class HMMGMM:
         X_all = np.vstack(seqs)
 
         self.model.init_params = ""
+        self.model.n_iter = n_iter
         self.model.fit(X_all, lengths)
 
     # ============================================================
@@ -76,7 +77,30 @@ class HMMGMM:
         # --- fast time-only emission
         t_grid = np.linspace(0.0, 1.0, T)
         mu_t = self.model.means_[:, :, 0]
-        var_t = self.model.covars_[:, :, 0, 0] + 1e-12
+        covtype = self.model.covariance_type
+        D = self.model.means_.shape[-1]  # total dim = 1 + pos_dim
+
+        if covtype == "full":
+            var_t = self.model.covars_[:, :, 0, 0] + 1e-12
+            # Cov(y,t) needed for conditional: shape (K,M,pos_dim)
+            cov_yt = self.model.covars_[:, :, 1:, 0]
+            cov_ty = self.model.covars_[:, :, 0, 1:]
+            cov_yy = self.model.covars_[:, :, 1:, 1:]
+        elif covtype == "diag":
+            # Only diagonal variances exist; cross-covariances are zero
+            var_t = self.model.covars_[:, :, 0] + 1e-12
+            cov_yt = np.zeros((self.n_states, self.n_mix, D-1))
+            cov_ty = np.zeros((self.n_states, self.n_mix, D-1))
+            # diag variances for y: shape (K,M,pos_dim)
+            cov_yy = np.zeros((self.n_states, self.n_mix, D-1, D-1))
+            diag_y = self.model.covars_[:, :, 1:]  # (K,M,pos_dim)
+            # fill diagonal matrices
+            for k in range(self.n_states):
+                for m in range(self.n_mix):
+                    cov_yy[k, m] = np.diag(diag_y[k, m] + 1e-12)
+        else:
+            raise ValueError(f"Unsupported covariance_type: {covtype}")
+
         logw = np.log(self.model.weights_ + 1e-12)
 
         logB = compute_logB_time_only(t_grid, logw, mu_t, var_t)
@@ -89,7 +113,7 @@ class HMMGMM:
         for k in range(K):
             w = self.model.weights_[k]
             mu_km = self.model.means_[k, :, 1:]
-            cov_km = self.model.covars_[k, :, 1:, 1:]
+            cov_km = cov_yy[k]  
             mu = np.sum(w[:, None] * mu_km, axis=0)
             S = np.zeros((pos_dim, pos_dim))
             for m in range(M):
