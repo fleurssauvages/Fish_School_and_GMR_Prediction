@@ -1,4 +1,5 @@
 import time
+from matplotlib.widgets import Slider
 import numpy as np
 from RL.env import FishGoalEnv
 import pickle
@@ -7,9 +8,23 @@ import numpy as np
 import matplotlib.pyplot as plt
 from RL.env import FishGoalEnv
 
-from HMM.hmm import HMMGMM
+from GMR.gmr import GMRGMM
 
-def gaussian_ellipsoid(mean, cov, n_std=2.0, n_points=30):
+def refresh_wireframes(ax, wireframes, mu_y, Sigma_y, step=30, n_std=1.5, n_points=20, alpha=0.08):
+    for wf in wireframes:
+        try:
+            wf.remove()
+        except Exception:
+            pass
+    wireframes.clear()
+
+    # redraw new (fewer + cheaper)
+    for t in range(0, len(mu_y), step):
+        X, Y, Z = gaussian_ellipsoid(mu_y[t], Sigma_y[t], n_std=n_std, n_points=n_points)
+        wf = ax.plot_wireframe(X, Y, Z, alpha=alpha)
+        wireframes.append(wf)
+
+def gaussian_ellipsoid(mean, cov, n_std=1.5, n_points=30):
     """
     Returns X,Y,Z points of a 3D covariance ellipsoid.
     """
@@ -36,12 +51,13 @@ def gaussian_ellipsoid(mean, cov, n_std=2.0, n_points=30):
 
     return ellipsoid[..., 0], ellipsoid[..., 1], ellipsoid[..., 2]
 
-def plot_gmr_uncertainty_3d(mu_y, Sigma_y, step=10, n_std=2.0, ax=None):
-    ax.plot(mu_y[:,0], mu_y[:,1], mu_y[:,2], 'k', lw=2)
-
+def plot_gmr_uncertainty_3d(mu_y, Sigma_y, step=10, n_std=1.5, ax=None):
+    wireframes = []
     for t in range(0, len(mu_y), step):
         X, Y, Z = gaussian_ellipsoid(mu_y[t], Sigma_y[t], n_std=n_std)
-        ax.plot_wireframe(X, Y, Z, alpha=0.1)
+        wf = ax.plot_wireframe(X, Y, Z, alpha=0.1)
+        wireframes.append(wf)
+    return wireframes
 
 def select_demos_near_via_anytime(pos_demos, via_point, k=10, stride=1):
     pos_demos = np.asarray(pos_demos, float)
@@ -51,11 +67,6 @@ def select_demos_near_via_anytime(pos_demos, via_point, k=10, stride=1):
     d = d_t.min(axis=0)
     idx = np.argsort(d)[:k*stride:stride]
     return idx, d[idx]
-
-
-def demo_weights_from_via_dist(d, sigma):
-    w = np.exp(-0.5 * (d / sigma)**2)
-    return w / (w.sum() + 1e-12)
 
 def select_demos_near_via(boids_pos, via_point, n_demos=3, space_stride=5, time_stride=10):
     idx, _ = select_demos_near_via_anytime(boids_pos, via_point, k=n_demos, stride=space_stride)
@@ -103,43 +114,40 @@ if __name__ == "__main__":
     x_start = env.start
     x_goal = env.goal
     
-    x_vias = np.array([[20.0, 20.0, 25.0],
-                       [20.0, 20.0, 15.0],
-                       [20.0, 25.0, 20.0],
-                       [20.0, 15.0, 20.0]])
+    angle = 0.0
+    r = 5.0
+    x_via_center = np.array([20.0, 20.0, 20.0])
+    x_via = x_via_center + np.array([0.0, r * np.cos(angle), r * np.sin(angle)])
 
     # ============================================================
     # Fit an HMM-GMM model
     # ============================================================
     """ Parameters"""
-    n_demos = 5
-    space_stride = 5
+    n_demos = 15
+    space_stride = 1
     time_stride = 10
-    n_states = 6
-    n_mix = 1
-    cov_type = "diag"  # "diag" or "full"
+    n_components = 6
+    cov_type = "full"  # "diag" or "full"
 
-    x_via = x_vias[0]
     pos_demos = select_demos_near_via(boids_pos, x_via, n_demos=n_demos, space_stride=space_stride, time_stride=time_stride)
     
     """ Fit an HMM-GMM model to the demonstrations """
-    hmmgmm = HMMGMM(n_states=n_states, n_mix=n_mix, seed=0, cov_type= cov_type)
+    gmr = GMRGMM(n_components=n_components, seed=0, cov_type=cov_type)
     t0 = time.time()
-    hmmgmm.fit(pos_demos)
+    gmr.fit(pos_demos)
     t1 = time.time()
     print(f"HMM-GMM Training Time: {(t1 - t0)*1000.0:.2f} ms")
 
     """ Update with new via point """
-    x_via = x_vias[2]
     t0 = time.time()
     pos_demos = select_demos_near_via(boids_pos, x_via, n_demos=n_demos, space_stride=space_stride, time_stride=time_stride)
-    hmmgmm.update(pos_demos, n_iter=3)
+    gmr.update(pos_demos, n_iter=15)
     t1 = time.time()
     print(f"HMM-GMM Update Time: {(t1 - t0)*1000.0:.2f} ms")
 
     """ Perform regression to get mean and covariance of trajectory """
     t0 = time.time()
-    mu_y, Sigma_y, gamma, loglik = hmmgmm.regress(T=max_steps, pos_dim=3)
+    mu_y, Sigma_y, gamma, loglik = gmr.regress(T=max_steps, pos_dim=3)
     t1 = time.time()
     print(f"Model Regression: {(t1 - t0)*1000.0:.2f} ms")
 
@@ -150,10 +158,28 @@ if __name__ == "__main__":
     fig = plt.figure(figsize=(22, 14))
     ax_traj = fig.add_subplot(111, projection='3d')
     i = 0
-    for demo in pos_demos:
-        xs, ys, zs = demo[:, 0], demo[:, 1], demo[:, 2]
-        ax_traj.plot(xs, ys, zs, 'k--', linewidth=1.0)
-    plot_gmr_uncertainty_3d(mu_y, Sigma_y, step=10, n_std=1.0, ax=ax_traj)
+    demo_lines = [ax_traj.plot([], [], [], 'k--', lw=1.0)[0] for _ in range(n_demos)]
+
+    def update_demo_lines(pos_demos):
+        global demo_lines
+        for i, ln in enumerate(demo_lines):
+            if i < len(pos_demos):
+                d = pos_demos[i]
+                ln.set_data(d[:,0], d[:,1])
+                ln.set_3d_properties(d[:,2])
+                ln.set_visible(True)
+            else:
+                ln.set_visible(False)
+
+    update_demo_lines(pos_demos)
+    mu_line, = ax_traj.plot(mu_y[:,0], mu_y[:,1], mu_y[:,2], 'k', lw=2)
+    mu_line.set_data(mu_y[:,0], mu_y[:,1])
+    mu_line.set_3d_properties(mu_y[:,2])
+
+    wireframes = plot_gmr_uncertainty_3d(mu_y, Sigma_y, step=10, n_std=1.5, ax=ax_traj)
+    refresh_wireframes(ax_traj, wireframes, mu_y, Sigma_y,
+                   step=30, n_std=1.5, n_points=20, alpha=0.3)
+
     r = env.obs_radius
     for c in env.obs_centers:
         u, v = np.mgrid[0:2*np.pi:20j, 0:np.pi:20j]
@@ -164,7 +190,7 @@ if __name__ == "__main__":
 
     ax_traj.scatter(x_start[0], x_start[1], x_start[2], c='blue', s=100, label='Start')
     ax_traj.scatter(x_goal[0], x_goal[1], x_goal[2], c='green', s=100, label='Goal')
-    ax_traj.scatter(x_via[0], x_via[1], x_via[2], c='orange', s=100, label='Via Point')
+    via_scatter = ax_traj.scatter(x_via[0], x_via[1], x_via[2], c='orange', s=100, label='Via Point')
 
     c = (x_start + x_goal) / 2
     span = np.linalg.norm(x_goal - x_start) / 2 + 1.0
@@ -177,4 +203,39 @@ if __name__ == "__main__":
     ax_traj.set_zlabel("z")
     plt.legend()
 
+    def _on_slider_change(val):
+        global demos_plot, mu, wireframes, via_scatter
+        angle = angle_slider.val
+        x_via = x_via_center + r * np.array([0.0, np.cos(angle), np.sin(angle)])
+        via_scatter._offsets3d = (
+            np.array([x_via[0]]),
+            np.array([x_via[1]]),
+            np.array([x_via[2]])
+        )
+
+        t0 = time.time()
+        pos_demos = select_demos_near_via(boids_pos, x_via, n_demos=n_demos, space_stride=space_stride, time_stride=time_stride)
+        gmr.update(pos_demos, n_iter=15)
+        t1 = time.time()
+        print(f"HMM-GMM Update Time with active plot: {(t1 - t0)*1000.0:.2f} ms")
+
+        update_demo_lines(pos_demos)
+        mu_y, Sigma_y, gamma, loglik = gmr.regress(T=max_steps, pos_dim=3)
+        mu_line.set_data(mu_y[:,0], mu_y[:,1])
+        mu_line.set_3d_properties(mu_y[:,2])
+
+        refresh_wireframes(ax_traj, wireframes, mu_y, Sigma_y,
+                   step=30, n_std=1.5, n_points=20, alpha=0.3)
+
+        fig.canvas.draw_idle()
+
+    angle_slider = Slider(
+        ax=fig.add_axes([0.25, 0.02, 0.15, 0.03]),
+        label='Via Point Angle',
+        valmin=0.0,
+        valmax=2.0 * np.pi,
+        valinit=0.0,
+    )
+
+    angle_slider.on_changed(_on_slider_change)
     plt.show()
