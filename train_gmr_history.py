@@ -161,7 +161,7 @@ if __name__ == "__main__":
         plt.ion()
         while plt.fignum_exists(fig.number):
             now = time.time()
-            dt = max(1e-4, now - last_t)
+            dt = 20
 
             trans, rot, buttons = spm.read() 
             v = np.array(trans, dtype=float)
