@@ -11,11 +11,11 @@ from controllers.spacemouse import SpaceMouse3D
 from GMR.utils import select_demos, refresh_wireframes
 
 # ----------------------------
-# Main
+# Mainti
 # ----------------------------
 if __name__ == "__main__":
     # ----------------------------
-    # 1) Load policy + generate fish trajectories (same idea as your script)
+    # 1) Load policy + generate fish trajectories
     # ----------------------------
     theta_path = "save/best_policy.pkl"
     action = pickle.load(open(theta_path, "rb"))["best_theta"]
@@ -70,8 +70,8 @@ if __name__ == "__main__":
     cov_type = "full"
 
     # history settings
-    history_len = 8          # how many last positions you condition on
-    update_period = 0.05      # seconds between GMR updates (throttle!)
+    history_len = 8         
+    update_period = 0.05      
     update_iters = 10         # EM iters per update
     move_eps = 1e-3           # don't update if you didn't move
 
@@ -80,10 +80,8 @@ if __name__ == "__main__":
     # ----------------------------
     spm = SpaceMouse3D(trans_scale=10.0, deadzone=0.0, lowpass=0.0, rate_hz=200)
     spm.start()
-
-    # use SpaceMouse-integrated cursor as "live via"
     x = x_start.astype(float).copy()
-    history = [x.copy()]  # oldest->newest
+    history = [x.copy()] 
     path = [x.copy()]     # full path for plotting
 
     # ----------------------------
@@ -204,10 +202,10 @@ if __name__ == "__main__":
 
             plt.pause(0.001)
 
-            if np.linalg.norm(buttons) > 0.5:
+            if np.linalg.norm(buttons) > 0.5: # Restart by pressing a button
                 x = x_start.astype(float).copy()
-                history = [x.copy()]  # oldest->newest
-                path = [x.copy()]     # full path for plotting
+                history = [x.copy()] 
+                path = [x.copy()] 
 
     finally:
         try:
