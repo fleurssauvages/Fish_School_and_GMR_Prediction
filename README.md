@@ -45,7 +45,7 @@ scripts/
 ### 🔹Free-roam: Fishes don't have any goal besides avoid obstacles and predators
 <img src="images/free_roam.gif" width="600" alt="traj">
 
-### 🔹 Goal-oriented roamn: Fishes try to reach a given goals defined by a weighted graph
+### 🔹 Goal-oriented roamn: Fishes try to reach given goals defined by a weighted graph
 <img src="images/target_roam.gif" width="800" alt="RL">
 
 ### 🔹 Goal-oriented roam after RL-optimization
