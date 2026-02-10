@@ -1,5 +1,5 @@
 import numpy as np
-from RL.env import FishGoalEnv
+from RL.env import FishGoalEnv, make_sphere_mesh
 from RL.multiagent_power_rl import MultiAgentPowerRL
 import pickle
 import numpy as np
@@ -7,7 +7,6 @@ import numpy as np
 def main():
     # --- Simulation Parameters ---
     boid_count = 500
-    pred_count = 4
     max_steps = 300
     dt = 1.0
 
@@ -19,7 +18,7 @@ def main():
     seed0 = 0
 
     # Weights: goal, time penalty, eaten penalty, entropy (penalty application is already negative in env)
-    w_goal, w_time, w_eaten, w_diversity = 10.0, 0.5, 2.0, 10.0
+    w_goal, w_time, w_diversity = 10.0, 0.5, 2.5
 
     # Initial policy
     """
@@ -29,35 +28,45 @@ def main():
     2: cohesion scalar
     3: boundary scalar
     4: randomness scalar
-    5: predator avoidance scalar
-    6: obstacle avoidance scalar
-    7: goal attraction gain
-    8: obstacle avoidance scalar
+    5: obstacle avoidance scalar
+    6: goal attraction gain
     """
     theta0 = np.array([1.0, #0: separation scalar
                        1.0, #1: alignment scalar
                        1.0, #2: cohesion scalar
                        1.0, #3: boundary scalar
                        1.0, #4: randomness scalar
-                       10.0, #5: predator avoidance scalar
-                       1.0, #6: obstacle avoidance scalar
-                       0.3, #7: goal attraction gain
+                       1.0, #5: obstacle avoidance scalar
+                       0.3, #6: goal attraction gain
                        ], dtype=np.float32)
 
     # Exploration std: scalar or per-dim vector
-    exploration_std = 5 * np.full((8,), [0.5, 0.5, 0.5, 0.5, 0.5, 2.0, 0.1, 0.1], dtype=np.float32)
+    exploration_std = 5 * np.full((7,), [0.5, 0.5, 0.5, 0.5, 2.0, 0.1, 0.1], dtype=np.float32)
 
 
-    env = FishGoalEnv(
-        boid_count=boid_count,
-        pred_count=pred_count,
-        max_steps=max_steps,
-        dt=dt,
-        w_goal=w_goal,
-        w_time=w_time,
-        w_eaten=w_eaten,
-        w_div=w_diversity,
-    )
+    verts, faces = make_sphere_mesh(
+            R=3.0,
+            seg_theta=24,
+            seg_phi=24,
+            center=(20.0, 20.0, 20.0)
+        )
+    goals = np.array([
+        [34.0, 20.0, 20.0],  # 0 - initial
+        [40.0, 20.0, 20.0],  # 1
+        [40.0, 30.0, 20.0],  # 2
+        [40.0, 10.0, 20.0],  # 3
+    ], dtype=np.float32)
+    goal_W = np.array([
+        [0.0, 2.0, 1.0, 1.0],  # from 0 → {1,2,3}
+        [0.0, 1.0, 0.0, 0.0],  # from 1 → 0
+        [0.0, 0.0, 1.0, 0.0],  # from 2 → 0
+        [0.0, 0.0, 0.0, 1.0],  # from 3 → 0
+    ], dtype=np.float32)
+
+    env = FishGoalEnv(boid_count=boid_count, max_steps=max_steps, dt=dt,
+                      verts=verts, faces=faces, goals=goals, goal_W=goal_W,
+                      w_goal=w_goal, w_time=w_time, w_div=w_diversity)
+
     ma = MultiAgentPowerRL(
         init_params=theta0,
         exploration_std=exploration_std,

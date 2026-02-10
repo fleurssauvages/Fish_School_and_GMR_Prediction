@@ -58,7 +58,7 @@ def select_demos_by_history(pos_all, history_pts, k=10, stride=1,
 
     latest = history_pts[-1]
     reps = reps_closest_to_point(pos_all, latest)  # (N,3)
-    idx = nms_by_rep_points(score, reps, k=k, min_rep_dist=0.1)
+    idx = nms_by_rep_points(score, reps, k=k, min_rep_dist=0.05)
     return idx, score[idx]
 
 def select_demos(boids_pos, history_pts, n_demos=3, space_stride=5, time_stride=10):

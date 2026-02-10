@@ -4,6 +4,8 @@ from qpsolvers import solve_qp
 import scipy.sparse as sp
 from scipy.linalg import block_diag
 from scipy.interpolate import CubicSpline
+from numba import njit
+import math
 
 """ ------------------------
 MPC problem assembly based from 
@@ -14,7 +16,6 @@ https://hal.science/hal-03790059/document
 #------------------------
 # Helpers for constraints
 #------------------------
-
 def build_spline(p0, p1, T=1.0):
     """
     p0, p1: (3,) start and goal
@@ -28,13 +29,94 @@ def sample_spline(spline, horizon, dt):
     ts = np.linspace(0, horizon*dt, horizon)
     return np.array([spline(t) for t in ts])
 
-def corridor_planes_from_spline(
-    p_ref, obstacles, margin=0.05
-):
+@njit(cache=True, fastmath=True)
+def closest_point_on_triangle(p, a, b, c):
+    ab = b - a
+    ac = c - a
+    ap = p - a
+
+    d1 = ab[0]*ap[0] + ab[1]*ap[1] + ab[2]*ap[2]
+    d2 = ac[0]*ap[0] + ac[1]*ap[1] + ac[2]*ap[2]
+    if d1 <= 0.0 and d2 <= 0.0:
+        return a
+
+    bp = p - b
+    d3 = ab[0]*bp[0] + ab[1]*bp[1] + ab[2]*bp[2]
+    d4 = ac[0]*bp[0] + ac[1]*bp[1] + ac[2]*bp[2]
+    if d3 >= 0.0 and d4 <= d3:
+        return b
+
+    vc = d1*d4 - d3*d2
+    if vc <= 0.0 and d1 >= 0.0 and d3 <= 0.0:
+        v = d1 / (d1 - d3 + 1e-12)
+        return a + v * ab
+
+    cp = p - c
+    d5 = ab[0]*cp[0] + ab[1]*cp[1] + ab[2]*cp[2]
+    d6 = ac[0]*cp[0] + ac[1]*cp[1] + ac[2]*cp[2]
+    if d6 >= 0.0 and d5 <= d6:
+        return c
+
+    vb = d5*d2 - d1*d6
+    if vb <= 0.0 and d2 >= 0.0 and d6 <= 0.0:
+        w = d2 / (d2 - d6 + 1e-12)
+        return a + w * ac
+
+    va = d3*d6 - d5*d4
+    if va <= 0.0 and (d4 - d3) >= 0.0 and (d5 - d6) >= 0.0:
+        w = (d4 - d3) / ((d4 - d3) + (d5 - d6) + 1e-12)
+        return b + w * (c - b)
+
+    denom = 1.0 / (va + vb + vc + 1e-12)
+    v = vb * denom
+    w = vc * denom
+    return a + ab * v + ac * w
+
+@njit(cache=True, fastmath=True)
+def closest_point_on_mesh(p, verts, faces):
+    best_d2 = 1e30
+    best_q = np.zeros(3, dtype=np.float32)
+
+    for fi in range(faces.shape[0]):
+        ia = faces[fi, 0]
+        ib = faces[fi, 1]
+        ic = faces[fi, 2]
+
+        a = verts[ia]
+        b = verts[ib]
+        c = verts[ic]
+
+        q = closest_point_on_triangle(p, a, b, c)
+        dx = p[0] - q[0]
+        dy = p[1] - q[1]
+        dz = p[2] - q[2]
+        d2 = dx*dx + dy*dy + dz*dz
+
+        if d2 < best_d2:
+            best_d2 = d2
+            best_q[0] = q[0]
+            best_q[1] = q[1]
+            best_q[2] = q[2]
+
+    # direction normal = from surface to point
+    vx = p[0] - best_q[0]
+    vy = p[1] - best_q[1]
+    vz = p[2] - best_q[2]
+    nrm = math.sqrt(vx*vx + vy*vy + vz*vz) + 1e-12
+
+    n = np.zeros(3, dtype=np.float32)
+    n[0] = vx / nrm
+    n[1] = vy / nrm
+    n[2] = vz / nrm
+
+    return best_q, n, math.sqrt(best_d2)
+
+def corridor_planes_from_spline(p_ref, obstacles, margin=0.05, max_dist=None):
     """
-    p_ref: (horizon, 3) spline samples
-    obstacles: list of {"center": (3,), "radius": float}
-    Returns A_x, b_x such that A_x X <= b_x
+    p_ref: (horizon,3)
+    margin: safety margin
+    max_dist: optional, skip obstacle if reference point is farther than this (speeds up)
+    Returns A_x, b_x so that A_x X <= b_x, with X stacked (6*horizon,)
     """
     horizon = p_ref.shape[0]
     A_x = []
@@ -44,30 +126,27 @@ def corridor_planes_from_spline(
         p_k = p_ref[k]
 
         for obs in obstacles:
-            c = obs["center"]
-            r = obs["radius"]
+            V = np.asarray(obs[0], dtype=float)
+            F = np.asarray(obs[1], dtype=np.int32)
 
-            v = p_k - c
-            d = np.linalg.norm(v)
-            if d < 1e-6:
-                continue  # degenerate, skip
+            p_surf, n, d = closest_point_on_mesh(p_k, V, F)
+            if (max_dist is not None) and (d > max_dist):
+                continue
+            if np.linalg.norm(n) < 1e-6:
+                continue
 
-            n = v / d # normal vector
-
-            # Build row acting on X (6*horizon)
+            # inequality: n^T x_k >= n^T p_surf + margin
+            # -> -n^T x_k <= -(n^T p_surf + margin)
             row = np.zeros(6 * horizon)
             row[6*k : 6*k+3] = -n
-
-            rhs = -(n @ c + r + margin) # - (n . c + r + margin) <= -n . x_k i.e the projection of x_k on n is at least r + margin away from center along n
+            rhs = -(float(np.dot(n, p_surf)) + float(margin))
 
             A_x.append(row)
             b_x.append(rhs)
 
     if len(A_x) == 0:
         return None, None
-
     return np.vstack(A_x), np.array(b_x)
-
 
 class LinearMPCController:
     def __init__(self, horizon=10, dt=0.05, gamma=1e-3, u_min=None, u_max=None):
@@ -89,7 +168,7 @@ class LinearMPCController:
         self.solution = None
         pass
     
-    def solve(self, ini_pose, des_pose_human, des_pose_auto, w, xi0=None, obstacles=None, traj=None, margin=0.05):
+    def solve(self, ini_pose, des_pose_human, des_pose_auto, w, xi0=None, obstacles=None, traj=None, margin=0.05, culling_dist=10):
         """
         Solve finite-horizon linear MPC:
         minimize ||X - X_des||^2 + gamma ||U||^2
@@ -167,8 +246,7 @@ class LinearMPCController:
 
         # build spline in world
         if obstacles is not None and traj is not None and np.linalg.norm(ini_pose[:3,3] - des_pose_auto[:3,3]) > 0.01:
-            traj = build_spline(ini_pose[:3,3], des_pose_auto[:3,3], T=1.0)
-            p_world = sample_spline(traj, self.horizon, self.dt)
+            p_world = traj[:self.horizon].copy()
             # --- convert reference + obstacles to local/tangent-ish coordinates ---
             R0 = ini_pose[:3,:3]
             p0 = ini_pose[:3,3]
@@ -176,16 +254,20 @@ class LinearMPCController:
 
             obstacles_local = []
             for obs in obstacles:
-                if np.linalg.norm(np.asarray(obs["center"]) - p0) - obs["radius"] < 3 * margin:
-                    c_local = R0.T @ (np.asarray(obs["center"]) - p0)
-                    obstacles_local.append({"center": c_local, "radius": obs["radius"]})
+                V = np.asarray(obs[0], dtype=float)
+                F = np.asarray(obs[1], dtype=np.int32)
+
+                centroid = V.mean(axis=0)
+                bound_r = np.max(np.linalg.norm(V - centroid, axis=1))
+                if np.linalg.norm(centroid - p0) - bound_r < culling_dist:
+                    V_local = (R0.T @ (V - p0).T).T
+                    obstacles_local.append([V_local, F])
 
             A_x, b_x = corridor_planes_from_spline(p_ref, obstacles_local, margin=margin)
 
             if A_x is not None:
                 G_corr = A_x @ B_big
                 h_corr = b_x - A_x @ (A_big @ Xprev)
-
                 self.A = np.vstack([self.A, G_corr])
                 self.b = np.hstack([self.b, h_corr])
                 
