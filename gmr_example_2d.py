@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 
 from RL.env2D import FishGoalEnv2D_DF, get_terminal_goals  # your 2D env :contentReference[oaicite:2]{index=2}
 from GMR.gmr import GMRGMM  # your GMR implementation (gmr.py)
-
+from controllers.spacemouse import SpaceMouse3D
 
 # ----------------------------
 # Demo selection (self-contained 2D version)
@@ -224,42 +224,22 @@ if __name__ == "__main__":
 
     ax.legend(loc="upper right")
 
-    # --- mouse drag control ---
-    dragging = {"on": False}
-
-    def on_press(event):
-        if event.inaxes != ax:
-            return
-        if event.button == 1:  # left
-            dragging["on"] = True
-
-    def on_release(event):
-        if event.button == 1:
-            dragging["on"] = False
-
-    def on_move(event):
-        if not dragging["on"]:
-            return
-        if event.inaxes != ax or event.xdata is None or event.ydata is None:
-            return
-        nonlocal_x[0] = float(event.xdata)
-        nonlocal_x[1] = float(event.ydata)
-
-    nonlocal_x = x  # alias so callback can write
-
-    fig.canvas.mpl_connect("button_press_event", on_press)
-    fig.canvas.mpl_connect("button_release_event", on_release)
-    fig.canvas.mpl_connect("motion_notify_event", on_move)
-
+    x = start.copy()
     last_update_t = time.time()
     last_x_for_update = x.copy()
+    dt = 10
+
+    spm = SpaceMouse3D(trans_scale=10.0, deadzone=0.0, lowpass=0.0, rate_hz=200)
+    spm.start()
 
     plt.ion()
     while plt.fignum_exists(fig.number):
         now = time.time()
+        trans, rot, buttons = spm.read()
+        trans = [-trans[1], trans[0]] 
+        v = np.array(trans, dtype=float)
 
-        # integrate "cursor"
-        x = nonlocal_x
+        x += v*dt
 
         # update history/path
         if np.linalg.norm(x - history[-1]) > 1e-6:
@@ -293,6 +273,11 @@ if __name__ == "__main__":
             cov_lines[:] = add_cov_ellipses(ax, mu_y, Sigma_y, step=25, n_std=1.5, alpha=0.18)
 
         plt.pause(0.01)
+
+        if np.linalg.norm(buttons) > 0.5: # Restart by pressing a button
+            x = start.astype(float).copy()
+            history = [x.copy()] 
+            path = [x.copy()] 
 
     plt.ioff()
     plt.show()

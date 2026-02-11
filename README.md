@@ -43,7 +43,7 @@ scripts/
 <div align="center">
 
 ### 🔹Free-roam: Fishes don't have any goal besides avoid obstacles and predators
-<img src="images/free_roam.gif" width="600" alt="traj">
+<img src="images/free_roam.gif" width="800" alt="traj">
 
 ### 🔹 Goal-oriented roamn: Fishes try to reach given goals defined by a weighted graph
 <img src="images/target_roam.gif" width="800" alt="RL">
@@ -56,6 +56,15 @@ scripts/
 
 ### 🔹 Shared Controller
 <img src="images/SharedControl.gif" width="800" alt="GMR">
+
+### 🔹 Goal-oriented roam after RL-optimization in 2D
+<img src="images/target_roam2D.gif" width="800" alt="RL">
+
+### 🔹 GMR Fitting with Multiple Goals in 2D
+<img src="images/GMR2D.gif" width="800" alt="GMR">
+
+### 🔹 Shared Controller in 2D
+<img src="images/SharedControl2D.gif" width="800" alt="GMR">
 
 </div>
 ---

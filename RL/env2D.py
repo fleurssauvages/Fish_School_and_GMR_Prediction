@@ -812,14 +812,14 @@ class FishGoalEnv2D_DF(gym.Env):
             self._ax.set_xlabel("x")
             self._ax.set_ylabel("y")
             terminal_goals, idx = get_terminal_goals(self.goals, self.goal_W)
-            self._ax.scatter(terminal_goals[:, 0], terminal_goals[:, 1], s=140, marker="*")
+            self._ax.scatter(terminal_goals[:, 0], terminal_goals[:, 1], s=140, marker="*", c="r")
 
             if self.segs is not None and self.segs.size > 0:
                 for m in range(self.segs.shape[0]):
                     x1, y1, x2, y2 = self.segs[m]
                     self._ax.plot([x1, x2], [y1, y2], 'k')
 
-            self._sc = self._ax.scatter([], [], s=10)
+            self._sc = self._ax.scatter([], [], s=10, c="b")
             plt.ion()
             plt.show()
 
@@ -1075,5 +1075,7 @@ if __name__ == "__main__":
         doAnimation=True,
         returnTrajectory=False,
     )
-    env.reset(seed=0)
-    obs, reward, terminated, truncated, info = env.step(action)
+
+    for _ in range(10):
+        env.reset(seed=0)
+        obs, reward, terminated, truncated, info = env.step(action)
