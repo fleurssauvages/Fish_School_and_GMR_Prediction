@@ -322,14 +322,14 @@ if __name__ == "__main__":
 
     # demos
     # demo_lines = [ax.plot([], [], "k--", lw=1.0, alpha=0.5)[0] for _ in range(n_demos)]
-    def set_demo_lines(demos):
-        for i, ln in enumerate(demo_lines):
-            if i < len(demos):
-                d = demos[i]
-                ln.set_data(d[:, 0], d[:, 1])
-                ln.set_visible(True)
-            else:
-                ln.set_visible(False)
+    # def set_demo_lines(demos):
+    #     for i, ln in enumerate(demo_lines):
+    #         if i < len(demos):
+    #             d = demos[i]
+    #             ln.set_data(d[:, 0], d[:, 1])
+    #             ln.set_visible(True)
+    #         else:
+    #             ln.set_visible(False)
     # set_demo_lines(pos_demos)
 
     # mean

@@ -321,7 +321,7 @@ if __name__ == "__main__":
                 last_update_t = now
                 last_x_for_update = x.copy()
                 
-                pos_demos = select_demos(boid_pos, history, time_stride=time_stride, space_stride=1, n_demos=15)
+                pos_demos = select_demos(boid_pos, history, time_stride=time_stride, n_demos=15)
 
                 # update + regress
                 gmrUpdate = copy.deepcopy(gmr)

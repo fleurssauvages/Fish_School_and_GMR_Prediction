@@ -36,7 +36,7 @@ def nms_by_rep_points(score, reps, k, min_rep_dist=0.5):
 
     return np.array(selected, dtype=int)
 
-def select_demos_by_history(pos_all, history_pts, k=10, stride=1,
+def select_demos_by_history(pos_all, history_pts, k=10,
                            w_min=0.05, w_max=1.0):
     pos_all = np.asarray(pos_all, float)
     history_pts = np.asarray(history_pts, float)
@@ -61,8 +61,8 @@ def select_demos_by_history(pos_all, history_pts, k=10, stride=1,
     idx = nms_by_rep_points(score, reps, k=k, min_rep_dist=0.05)
     return idx, score[idx]
 
-def select_demos(boids_pos, history_pts, n_demos=3, space_stride=5, time_stride=10):
-    idx, _ = select_demos_by_history(boids_pos, history_pts, k=n_demos, stride=space_stride)
+def select_demos(boids_pos, history_pts, n_demos=3, time_stride=10):
+    idx, _ = select_demos_by_history(boids_pos, history_pts, k=n_demos)
     pos_demos = []
     for i in idx:
         demo = boids_pos[:, i, :]
